@@ -111,7 +111,6 @@ public class AdminController {
     
     <div style="margin-top: 30px;">
         <button onclick="showAddForm()" class="btn btn-success">➕ Add New Service</button>
-        <a href="/h2-console" class="btn btn-secondary" target="_blank">🗄️ Database Console</a>
     </div>
     
     <!-- Add/Edit Form -->
