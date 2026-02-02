@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  funnel-proxy:
+    build: .
+    ports:
+      - "80:80"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+    restart: unless-stopped
+    
+  # Example backend services for testing
+  # Uncomment and modify as needed
+  
+  # nginx-demo:
+  #   image: nginx:alpine
+  #   ports:
+  #     - "8080:80"
+  #   volumes:
+  #     - ./demo-content:/usr/share/nginx/html
+  #   restart: unless-stopped
+  
+  # whoami:
+  #   image: traefik/whoami
+  #   ports:
+  #     - "8081:80"
+  #   restart: unless-stopped
