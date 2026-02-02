@@ -8,7 +8,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
 
-@RestController
+// Temporarily disable this controller to test admin routes
+// @RestController
 @Order(200) // Lower priority than admin controllers
 public class ProxyController {
     
