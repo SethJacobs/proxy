@@ -22,19 +22,24 @@ public class ProxyService {
     public Mono<Void> proxy(ServerHttpRequest request, ServerHttpResponse response) {
         String path = request.getPath().value();
         
-        // Skip admin paths
-        if (path.startsWith("/admin") || path.startsWith("/h2-console")) {
-            return Mono.error(new RuntimeException("Admin path not proxied"));
-        }
+        System.out.println("🔍 ProxyService: Looking for service matching path: " + path);
         
         return repo.findAll()
-                .filter(s -> path.startsWith(s.getPathPrefix()))
+                .doOnNext(service -> System.out.println("📋 Found service: " + service.getName() + " -> " + service.getPathPrefix()))
+                .filter(s -> {
+                    boolean matches = path.startsWith(s.getPathPrefix());
+                    System.out.println("🔍 Checking " + s.getPathPrefix() + " against " + path + " = " + matches);
+                    return matches;
+                })
                 .next()
                 .switchIfEmpty(Mono.defer(() -> {
+                    System.out.println("❌ No service found for path: " + path);
                     response.setStatusCode(org.springframework.http.HttpStatus.NOT_FOUND);
                     return response.setComplete().then(Mono.empty());
                 }))
                 .flatMap(mapping -> {
+                    System.out.println("✅ Found matching service: " + mapping.getName() + " for path: " + path);
+                    
                     // Rewrite path: remove the prefix and ensure it starts with /
                     String newPath = path.replaceFirst("^" + mapping.getPathPrefix(), "");
                     if (!newPath.startsWith("/")) {
@@ -46,6 +51,9 @@ public class ProxyService {
                     if (request.getURI().getQuery() != null) {
                         targetUrl += "?" + request.getURI().getQuery();
                     }
+                    
+                    final String finalTargetUrl = targetUrl; // Make effectively final
+                    System.out.println("🎯 Proxying " + path + " -> " + finalTargetUrl);
                     
                     // Create headers for the proxied request
                     HttpHeaders headers = new HttpHeaders();
@@ -59,14 +67,17 @@ public class ProxyService {
                     // Set the Host header to the target host
                     if (mapping.getHost() != null && !mapping.getHost().isEmpty()) {
                         headers.set("Host", mapping.getHost());
+                        System.out.println("🏠 Setting Host header to: " + mapping.getHost());
                     }
                     
                     // Make the proxied request
                     return webClient.method(request.getMethod())
-                            .uri(targetUrl)
+                            .uri(finalTargetUrl)
                             .headers(h -> h.addAll(headers))
                             .body(request.getBody(), DataBuffer.class)
                             .exchangeToMono(clientResponse -> {
+                                System.out.println("📡 Got response: " + clientResponse.statusCode() + " from " + finalTargetUrl);
+                                
                                 // Copy response status
                                 response.setStatusCode(clientResponse.statusCode());
                                 
@@ -81,6 +92,7 @@ public class ProxyService {
                                 return response.writeWith(clientResponse.bodyToFlux(DataBuffer.class));
                             })
                             .onErrorResume(error -> {
+                                System.err.println("❌ Proxy error for " + finalTargetUrl + ": " + error.getMessage());
                                 response.setStatusCode(org.springframework.http.HttpStatus.BAD_GATEWAY);
                                 return response.setComplete();
                             });

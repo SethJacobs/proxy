@@ -8,8 +8,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
 
-// Temporarily disable this controller to test admin routes
-// @RestController
+@RestController
 @Order(200) // Lower priority than admin controllers
 public class ProxyController {
     
@@ -23,8 +22,11 @@ public class ProxyController {
     public Mono<Void> handle(ServerHttpRequest request, ServerHttpResponse response) {
         String path = request.getPath().value();
         
-        // Skip admin paths completely
-        if (path.startsWith("/admin")) {
+        System.out.println("🔀 ProxyController handling: " + path);
+        
+        // Skip admin, health, and status paths - let other controllers handle them
+        if (path.startsWith("/admin") || path.equals("/health") || path.equals("/status") || path.equals("/")) {
+            System.out.println("⏭️ Skipping proxy for admin/health path: " + path);
             response.setStatusCode(org.springframework.http.HttpStatus.NOT_FOUND);
             return response.setComplete();
         }

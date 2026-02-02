@@ -17,14 +17,13 @@ public class WebSocketConfig {
     @Bean
     public HandlerMapping webSocketMapping(WebSocketProxyHandler webSocketProxyHandler) {
         Map<String, WebSocketHandler> map = new HashMap<>();
-        // Only handle WebSocket connections for proxied services, not admin paths
-        // We'll make this more specific once we have services configured
-        // For now, disable WebSocket handling to fix the routing issue
-        // map.put("/ws/**", webSocketProxyHandler);
+        // Handle WebSocket connections for proxied services
+        // This will catch WebSocket upgrade requests for any path that's not admin
+        map.put("/**", webSocketProxyHandler);
         
         SimpleUrlHandlerMapping mapping = new SimpleUrlHandlerMapping();
         mapping.setUrlMap(map);
-        mapping.setOrder(10); // Lower priority than REST controllers
+        mapping.setOrder(50); // Between REST controllers (1-10) and proxy controller (200)
         return mapping;
     }
     
