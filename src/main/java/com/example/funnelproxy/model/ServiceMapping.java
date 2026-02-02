@@ -1,6 +1,7 @@
 package com.example.funnelproxy.model;
 
 import org.springframework.data.annotation.Id;
+import org.springframework.data.relational.core.mapping.Column;
 import org.springframework.data.relational.core.mapping.Table;
 
 @Table("service_mapping")
@@ -8,9 +9,16 @@ public class ServiceMapping {
     @Id
     private Long id;
     
+    @Column("name")
     private String name;        // e.g., "Home Assistant"
+    
+    @Column("path_prefix")
     private String pathPrefix;  // e.g., "/ha"
+    
+    @Column("target_url")
     private String targetUrl;   // e.g., "http://homeassistant:8123"
+    
+    @Column("host")
     private String host;        // e.g., "homeassistant.home"
     
     // Default constructor
