@@ -2,6 +2,7 @@ package com.example.funnelproxy.controller;
 
 import com.example.funnelproxy.model.ServiceMapping;
 import com.example.funnelproxy.repository.ServiceMappingRepo;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
@@ -9,11 +10,18 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 @RestController
+@Order(1) // Highest priority
 public class AdminController {
     private final ServiceMappingRepo repo;
     
     public AdminController(ServiceMappingRepo repo) {
         this.repo = repo;
+    }
+    
+    // Simple test endpoint
+    @GetMapping("/admin/test")
+    public Mono<String> test() {
+        return Mono.just("Admin controller is working!");
     }
     
     // Serve the admin dashboard HTML

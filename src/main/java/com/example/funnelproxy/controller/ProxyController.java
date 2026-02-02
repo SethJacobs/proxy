@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
 
 @RestController
-@Order(100) // Lower priority than admin controllers
+@Order(200) // Lower priority than admin controllers
 public class ProxyController {
     
     private final ProxyService proxyService;
@@ -18,12 +18,12 @@ public class ProxyController {
         this.proxyService = proxyService;
     }
     
-    @RequestMapping(value = "/**", produces = "*/*")
+    @RequestMapping(value = "/**")
     public Mono<Void> handle(ServerHttpRequest request, ServerHttpResponse response) {
         String path = request.getPath().value();
         
-        // Skip admin and H2 console paths - let other controllers handle them
-        if (path.startsWith("/admin") || path.startsWith("/h2-console")) {
+        // Skip admin paths completely
+        if (path.startsWith("/admin")) {
             response.setStatusCode(org.springframework.http.HttpStatus.NOT_FOUND);
             return response.setComplete();
         }
