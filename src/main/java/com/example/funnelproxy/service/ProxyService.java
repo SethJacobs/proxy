@@ -31,6 +31,7 @@ public class ProxyService {
                     System.out.println("🔍 Checking " + s.getPathPrefix() + " against " + path + " = " + matches);
                     return matches;
                 })
+                .sort((a, b) -> Integer.compare(b.getPathPrefix().length(), a.getPathPrefix().length())) // Longest prefix first
                 .next()
                 .switchIfEmpty(Mono.defer(() -> {
                     System.out.println("❌ No service found for path: " + path);
@@ -92,7 +93,17 @@ public class ProxyService {
                                 return response.writeWith(clientResponse.bodyToFlux(DataBuffer.class));
                             })
                             .onErrorResume(error -> {
-                                System.err.println("❌ Proxy error for " + finalTargetUrl + ": " + error.getMessage());
+                                String errorMsg = error.getMessage();
+                                System.err.println("❌ Proxy error for " + finalTargetUrl + ": " + errorMsg);
+                                
+                                // Provide helpful error messages
+                                if (errorMsg.contains("Failed to resolve")) {
+                                    System.err.println("💡 DNS Resolution failed. Try using IP address instead of hostname.");
+                                    System.err.println("💡 Example: http://192.168.1.100:8123 instead of http://homeassistant:8123");
+                                } else if (errorMsg.contains("Connection refused")) {
+                                    System.err.println("💡 Connection refused. Check if the service is running and accessible.");
+                                }
+                                
                                 response.setStatusCode(org.springframework.http.HttpStatus.BAD_GATEWAY);
                                 return response.setComplete();
                             });

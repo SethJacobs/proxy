@@ -237,6 +237,14 @@ public class AdminController {
                 <li><strong>WebSocket support:</strong> Real-time features work seamlessly (Home Assistant, etc.)</li>
                 <li><strong>Dynamic configuration:</strong> Add/remove services without restarting</li>
             </ul>
+            
+            <h3>🔧 Configuration Tips:</h3>
+            <ul>
+                <li><strong>Target URL:</strong> Use IP addresses (e.g., <code>http://192.168.1.100:8123</code>) if hostnames don't resolve</li>
+                <li><strong>Docker networks:</strong> Use container names if services are in the same Docker network</li>
+                <li><strong>Home Assistant:</strong> May need <code>http_base_url</code> configured to work behind a proxy</li>
+                <li><strong>Host Header:</strong> Some services require specific host headers to function properly</li>
+            </ul>
         </div>
     </div>
     
