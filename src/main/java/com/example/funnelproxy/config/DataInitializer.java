@@ -17,34 +17,36 @@ public class DataInitializer implements CommandLineRunner {
     @Override
     public void run(String... args) throws Exception {
         // Only add sample data if the database is empty
-        if (repo.count() == 0) {
-            // Add some example services (commented out by default)
-            // Uncomment and modify these as needed for your setup
-            
-            /*
-            repo.save(new ServiceMapping(
-                "Home Assistant", 
-                "/ha", 
-                "http://homeassistant:8123", 
-                "homeassistant.local"
-            ));
-            
-            repo.save(new ServiceMapping(
-                "Immich", 
-                "/immich", 
-                "http://immich:2283", 
-                "immich.local"
-            ));
-            
-            repo.save(new ServiceMapping(
-                "Pi-hole Admin", 
-                "/pihole", 
-                "http://pihole:80", 
-                "pihole.local"
-            ));
-            */
-            
-            System.out.println("✅ Funnel Proxy initialized. Visit /admin to configure services.");
-        }
+        repo.count().subscribe(count -> {
+            if (count == 0) {
+                // Add some example services (commented out by default)
+                // Uncomment and modify these as needed for your setup
+                
+                /*
+                repo.save(new ServiceMapping(
+                    "Home Assistant", 
+                    "/ha", 
+                    "http://homeassistant:8123", 
+                    "homeassistant.local"
+                )).subscribe();
+                
+                repo.save(new ServiceMapping(
+                    "Immich", 
+                    "/immich", 
+                    "http://immich:2283", 
+                    "immich.local"
+                )).subscribe();
+                
+                repo.save(new ServiceMapping(
+                    "Pi-hole Admin", 
+                    "/pihole", 
+                    "http://pihole:80", 
+                    "pihole.local"
+                )).subscribe();
+                */
+                
+                System.out.println("✅ Funnel Proxy initialized. Visit /admin to configure services.");
+            }
+        });
     }
 }

@@ -1,12 +1,11 @@
 package com.example.funnelproxy.repository;
 
 import com.example.funnelproxy.model.ServiceMapping;
-import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.repository.reactive.ReactiveCrudRepository;
 import org.springframework.stereotype.Repository;
-
-import java.util.Optional;
+import reactor.core.publisher.Mono;
 
 @Repository
-public interface ServiceMappingRepo extends JpaRepository<ServiceMapping, Long> {
-    Optional<ServiceMapping> findByPathPrefix(String pathPrefix);
+public interface ServiceMappingRepo extends ReactiveCrudRepository<ServiceMapping, Long> {
+    Mono<ServiceMapping> findByPathPrefix(String pathPrefix);
 }

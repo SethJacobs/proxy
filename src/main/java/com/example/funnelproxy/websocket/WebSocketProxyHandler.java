@@ -9,7 +9,6 @@ import org.springframework.web.reactive.socket.client.ReactorNettyWebSocketClien
 import reactor.core.publisher.Mono;
 
 import java.net.URI;
-import java.util.List;
 
 @Component
 public class WebSocketProxyHandler implements WebSocketHandler {
@@ -26,16 +25,14 @@ public class WebSocketProxyHandler implements WebSocketHandler {
     public Mono<Void> handle(WebSocketSession session) {
         String path = session.getHandshakeInfo().getUri().getPath();
         
-        List<ServiceMapping> services = repo.findAll();
-        ServiceMapping mapping = services.stream()
+        return repo.findAll()
                 .filter(s -> path.startsWith(s.getPathPrefix()))
-                .findFirst()
-                .orElse(null);
-        
-        if (mapping == null) {
-            return session.close();
-        }
-        
+                .next()
+                .flatMap(mapping -> proxyWebSocket(session, mapping, path))
+                .switchIfEmpty(session.close());
+    }
+    
+    private Mono<Void> proxyWebSocket(WebSocketSession session, ServiceMapping mapping, String path) {
         // Rewrite path for target service
         String newPath = path.replaceFirst("^" + mapping.getPathPrefix(), "");
         if (!newPath.startsWith("/")) {

@@ -1,0 +1,7 @@
+CREATE TABLE IF NOT EXISTS service_mapping (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    path_prefix VARCHAR(255) NOT NULL UNIQUE,
+    target_url VARCHAR(500) NOT NULL,
+    host VARCHAR(255)
+);

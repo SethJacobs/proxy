@@ -7,8 +7,8 @@ A dynamic reverse proxy that provides a single Tailscale Funnel endpoint for mul
 - **Single Funnel Endpoint**: One Tailscale Funnel URL for all your services
 - **Dynamic Routing**: Path-based routing (`/ha`, `/immich`, `/pihole`) with automatic path rewriting
 - **WebSocket Support**: Full real-time functionality for Home Assistant and other WebSocket-dependent apps
-- **Persistent Configuration**: H2 database stores all service mappings
-- **Web Dashboard**: Easy-to-use interface for managing services
+- **Persistent Configuration**: H2 database with R2DBC for reactive data access
+- **Web Dashboard**: Single-page admin interface for managing services
 - **Zero Downtime**: Add/remove services without restarting
 
 ## 🏗️ Architecture
@@ -40,9 +40,11 @@ Internet → Tailscale Funnel → Funnel Proxy → Backend Services
 # Clone and build
 git clone <repository>
 cd funnel-proxy
-mvn clean package
+./build.sh
 
 # Run the application
+./start.sh
+# or directly:
 java -jar target/funnel-proxy-1.0.0.jar
 ```
 
@@ -96,8 +98,12 @@ tailscale funnel 80 on
 # Server configuration
 server.port=80
 
-# H2 Database
-spring.datasource.url=jdbc:h2:file:./data/funnel-proxy
+# R2DBC Database (reactive)
+spring.r2dbc.url=r2dbc:h2:file:///./data/funnel-proxy
+spring.r2dbc.username=sa
+spring.r2dbc.password=
+
+# H2 Console for debugging
 spring.h2.console.enabled=true
 spring.h2.console.path=/h2-console
 
@@ -111,7 +117,7 @@ You can override configuration using environment variables:
 
 ```bash
 export SERVER_PORT=8080
-export SPRING_DATASOURCE_URL=jdbc:h2:file:/data/funnel-proxy
+export SPRING_R2DBC_URL=r2dbc:h2:file:///data/funnel-proxy
 java -jar funnel-proxy-1.0.0.jar
 ```
 
@@ -128,6 +134,13 @@ java -jar funnel-proxy-1.0.0.jar
 1. WebSocket upgrade request: `wss://node.tail2ca5d.ts.net/ha/api/websocket`
 2. Proxy establishes connection to: `ws://homeassistant:8123/api/websocket`
 3. Bidirectional message forwarding maintains real-time functionality
+
+### Admin API
+The admin interface uses REST endpoints:
+- `GET /admin/api/services` - List all services
+- `POST /admin/api/services` - Add new service
+- `PUT /admin/api/services/{id}` - Update service
+- `DELETE /admin/api/services/{id}` - Delete service
 
 ## 🛠️ Development
 
@@ -159,7 +172,7 @@ ENTRYPOINT ["java", "-jar", "/app.jar"]
 
 ```bash
 docker build -t funnel-proxy .
-docker run -p 80:80 -v $(pwd)/data:/data funnel-proxy
+docker run -p 80:80 -v $(pwd)/data:/app/data funnel-proxy
 ```
 
 ## 🔒 Security Considerations
@@ -185,6 +198,34 @@ docker run -p 80:80 -v $(pwd)/data:/data funnel-proxy
 1. Check file permissions for `./data/` directory
 2. Access H2 console to verify service mappings
 3. Restart application if database becomes corrupted
+
+## 📝 Technical Details
+
+### Technology Stack
+- **Spring Boot 3.3.3** with WebFlux for reactive programming
+- **R2DBC** for reactive database access
+- **H2 Database** for lightweight persistence
+- **ReactorNetty** for WebSocket proxying
+- **Single-page admin interface** with vanilla JavaScript
+
+### Project Structure
+```
+funnel-proxy/
+├── src/main/java/com/example/funnelproxy/
+│   ├── FunnelProxyApplication.java      # Main Spring Boot app
+│   ├── model/ServiceMapping.java        # R2DBC entity
+│   ├── repository/ServiceMappingRepo.java # Reactive repository
+│   ├── controller/
+│   │   ├── ProxyController.java         # Handles all proxied requests
+│   │   └── AdminController.java         # REST API + admin UI
+│   ├── service/ProxyService.java        # Core proxy logic
+│   ├── websocket/WebSocketProxyHandler.java # WebSocket proxying
+│   └── config/                          # Configuration classes
+├── src/main/resources/
+│   ├── application.properties           # App configuration
+│   └── schema.sql                       # Database schema
+└── target/funnel-proxy-1.0.0.jar       # Executable JAR
+```
 
 ## 📝 License
 

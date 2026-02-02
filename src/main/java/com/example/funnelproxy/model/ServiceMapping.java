@@ -1,11 +1,11 @@
 package com.example.funnelproxy.model;
 
-import jakarta.persistence.*;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.relational.core.mapping.Table;
 
-@Entity
+@Table("service_mapping")
 public class ServiceMapping {
     @Id
-    @GeneratedValue(strategy = GenerationType.AUTO)
     private Long id;
     
     private String name;        // e.g., "Home Assistant"

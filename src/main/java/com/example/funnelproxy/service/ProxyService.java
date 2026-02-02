@@ -1,6 +1,5 @@
 package com.example.funnelproxy.service;
 
-import com.example.funnelproxy.model.ServiceMapping;
 import com.example.funnelproxy.repository.ServiceMappingRepo;
 import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.http.HttpHeaders;
@@ -9,8 +8,6 @@ import org.springframework.http.server.reactive.ServerHttpResponse;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
-
-import java.util.List;
 
 @Service
 public class ProxyService {
@@ -30,66 +27,63 @@ public class ProxyService {
             return Mono.error(new RuntimeException("Admin path not proxied"));
         }
         
-        List<ServiceMapping> services = repo.findAll();
-        
-        ServiceMapping mapping = services.stream()
+        return repo.findAll()
                 .filter(s -> path.startsWith(s.getPathPrefix()))
-                .findFirst()
-                .orElse(null);
-        
-        if (mapping == null) {
-            response.setStatusCode(org.springframework.http.HttpStatus.NOT_FOUND);
-            return response.setComplete();
-        }
-        
-        // Rewrite path: remove the prefix and ensure it starts with /
-        String newPath = path.replaceFirst("^" + mapping.getPathPrefix(), "");
-        if (!newPath.startsWith("/")) {
-            newPath = "/" + newPath;
-        }
-        
-        // Build target URL
-        String targetUrl = mapping.getTargetUrl() + newPath;
-        if (request.getURI().getQuery() != null) {
-            targetUrl += "?" + request.getURI().getQuery();
-        }
-        
-        // Create headers for the proxied request
-        HttpHeaders headers = new HttpHeaders();
-        request.getHeaders().forEach((key, values) -> {
-            // Skip hop-by-hop headers
-            if (!isHopByHopHeader(key)) {
-                headers.addAll(key, values);
-            }
-        });
-        
-        // Set the Host header to the target host
-        if (mapping.getHost() != null && !mapping.getHost().isEmpty()) {
-            headers.set("Host", mapping.getHost());
-        }
-        
-        // Make the proxied request
-        return webClient.method(request.getMethod())
-                .uri(targetUrl)
-                .headers(h -> h.addAll(headers))
-                .body(request.getBody(), DataBuffer.class)
-                .exchangeToMono(clientResponse -> {
-                    // Copy response status
-                    response.setStatusCode(clientResponse.statusCode());
+                .next()
+                .switchIfEmpty(Mono.defer(() -> {
+                    response.setStatusCode(org.springframework.http.HttpStatus.NOT_FOUND);
+                    return response.setComplete().then(Mono.empty());
+                }))
+                .flatMap(mapping -> {
+                    // Rewrite path: remove the prefix and ensure it starts with /
+                    String newPath = path.replaceFirst("^" + mapping.getPathPrefix(), "");
+                    if (!newPath.startsWith("/")) {
+                        newPath = "/" + newPath;
+                    }
                     
-                    // Copy response headers
-                    clientResponse.headers().asHttpHeaders().forEach((key, values) -> {
+                    // Build target URL
+                    String targetUrl = mapping.getTargetUrl() + newPath;
+                    if (request.getURI().getQuery() != null) {
+                        targetUrl += "?" + request.getURI().getQuery();
+                    }
+                    
+                    // Create headers for the proxied request
+                    HttpHeaders headers = new HttpHeaders();
+                    request.getHeaders().forEach((key, values) -> {
+                        // Skip hop-by-hop headers
                         if (!isHopByHopHeader(key)) {
-                            response.getHeaders().addAll(key, values);
+                            headers.addAll(key, values);
                         }
                     });
                     
-                    // Stream the response body
-                    return response.writeWith(clientResponse.bodyToFlux(DataBuffer.class));
-                })
-                .onErrorResume(error -> {
-                    response.setStatusCode(org.springframework.http.HttpStatus.BAD_GATEWAY);
-                    return response.setComplete();
+                    // Set the Host header to the target host
+                    if (mapping.getHost() != null && !mapping.getHost().isEmpty()) {
+                        headers.set("Host", mapping.getHost());
+                    }
+                    
+                    // Make the proxied request
+                    return webClient.method(request.getMethod())
+                            .uri(targetUrl)
+                            .headers(h -> h.addAll(headers))
+                            .body(request.getBody(), DataBuffer.class)
+                            .exchangeToMono(clientResponse -> {
+                                // Copy response status
+                                response.setStatusCode(clientResponse.statusCode());
+                                
+                                // Copy response headers
+                                clientResponse.headers().asHttpHeaders().forEach((key, values) -> {
+                                    if (!isHopByHopHeader(key)) {
+                                        response.getHeaders().addAll(key, values);
+                                    }
+                                });
+                                
+                                // Stream the response body
+                                return response.writeWith(clientResponse.bodyToFlux(DataBuffer.class));
+                            })
+                            .onErrorResume(error -> {
+                                response.setStatusCode(org.springframework.http.HttpStatus.BAD_GATEWAY);
+                                return response.setComplete();
+                            });
                 });
     }
     
