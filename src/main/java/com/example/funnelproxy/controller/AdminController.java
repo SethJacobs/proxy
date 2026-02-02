@@ -21,12 +21,14 @@ public class AdminController {
     // Simple test endpoint
     @GetMapping("/admin/test")
     public Mono<String> test() {
+        System.out.println("🧪 Admin test endpoint called");
         return Mono.just("Admin controller is working!");
     }
     
     // Serve the admin dashboard HTML
     @GetMapping(value = "/admin", produces = MediaType.TEXT_HTML_VALUE)
     public Mono<String> dashboard() {
+        System.out.println("🎛️ Admin dashboard endpoint called");
         return Mono.just(getAdminHtml());
     }
     
