@@ -3,13 +3,17 @@ package com.example.funnelproxy.service;
 import com.example.funnelproxy.model.ServiceMapping;
 import com.example.funnelproxy.repository.ServiceMappingRepo;
 import org.springframework.core.io.buffer.DataBuffer;
+import org.springframework.core.io.buffer.DataBufferFactory;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.http.server.reactive.ServerHttpResponse;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 @Service
@@ -40,14 +44,42 @@ public class ProxyService {
                     
                     // If no exact match, check if this might be a root-level request from a proxied app
                     ServiceMapping contextMatch = null;
-                    if (exactMatch == null && referer != null) {
-                        contextMatch = services.stream()
-                                .filter(s -> referer.contains(s.getPathPrefix()))
-                                .findFirst()
-                                .orElse(null);
+                    if (exactMatch == null) {
+                        // First, try referer-based matching
+                        if (referer != null) {
+                            contextMatch = services.stream()
+                                    .filter(s -> referer.contains(s.getPathPrefix()))
+                                    .findFirst()
+                                    .orElse(null);
+                            
+                            if (contextMatch != null) {
+                                System.out.println("🎯 Context-based match: " + path + " likely belongs to " + contextMatch.getName() + " based on referer");
+                            }
+                        }
                         
-                        if (contextMatch != null) {
-                            System.out.println("🎯 Context-based match: " + path + " likely belongs to " + contextMatch.getName() + " based on referer");
+                        // If still no match, try pattern-based matching for known asset patterns
+                        if (contextMatch == null) {
+                            if (path.startsWith("/_app/immutable/") || path.startsWith("/api/")) {
+                                // These are likely Immich assets
+                                contextMatch = services.stream()
+                                        .filter(s -> s.getName().toLowerCase().contains("immich"))
+                                        .findFirst()
+                                        .orElse(null);
+                                
+                                if (contextMatch != null) {
+                                    System.out.println("🎯 Pattern-based match: " + path + " likely belongs to " + contextMatch.getName() + " based on path pattern");
+                                }
+                            } else if (path.startsWith("/hacsfiles/") || path.startsWith("/auth/") || path.startsWith("/manifest.json") || path.startsWith("/sw-modern.js")) {
+                                // These are likely Home Assistant assets
+                                contextMatch = services.stream()
+                                        .filter(s -> s.getName().toLowerCase().contains("home") || s.getName().toLowerCase().contains("assistant"))
+                                        .findFirst()
+                                        .orElse(null);
+                                
+                                if (contextMatch != null) {
+                                    System.out.println("🎯 Pattern-based match: " + path + " likely belongs to " + contextMatch.getName() + " based on path pattern");
+                                }
+                            }
                         }
                     }
                     
@@ -66,17 +98,18 @@ public class ProxyService {
     private Mono<Void> proxyRequest(ServerHttpRequest request, ServerHttpResponse response, ServiceMapping mapping, String originalPath) {
         System.out.println("✅ Found matching service: " + mapping.getName() + " for path: " + originalPath);
         
-        // Rewrite path: remove the prefix and ensure it starts with /
+        // Rewrite path: only remove the prefix if the path actually starts with it
         String newPath;
-        if (originalPath.startsWith(mapping.getPathPrefix())) {
-            // Normal case: /ha/something -> /something
-            newPath = originalPath.replaceFirst("^" + mapping.getPathPrefix(), "");
-            if (!newPath.startsWith("/")) {
+        if (originalPath.startsWith(mapping.getPathPrefix() + "/") || originalPath.equals(mapping.getPathPrefix())) {
+            // Normal case: /ha/something -> /something or /ha -> /
+            newPath = originalPath.substring(mapping.getPathPrefix().length());
+            if (newPath.isEmpty() || !newPath.startsWith("/")) {
                 newPath = "/" + newPath;
             }
         } else {
-            // Context-based routing: /auth/authorize -> /auth/authorize (keep as-is)
+            // Context-based routing: /auth/authorize, /hacsfiles/iconset.js -> keep as-is
             newPath = originalPath;
+            System.out.println("🔄 Context-based routing: keeping path as-is");
         }
         
         // Build target URL
@@ -130,8 +163,15 @@ public class ProxyService {
                         }
                     });
                     
-                    // Stream the response body
-                    return response.writeWith(clientResponse.bodyToFlux(DataBuffer.class));
+                    // Stream the response body with potential content rewriting
+                    return response.writeWith(
+                        rewriteResponseContent(
+                            clientResponse.bodyToFlux(DataBuffer.class),
+                            clientResponse.headers().contentType().orElse(null),
+                            mapping,
+                            response.bufferFactory()
+                        )
+                    );
                 })
                 .onErrorResume(error -> {
                     String errorMsg = error.getMessage();
@@ -168,5 +208,87 @@ public class ProxyService {
                lowerName.equals("trailers") ||
                lowerName.equals("transfer-encoding") ||
                lowerName.equals("upgrade");
+    }
+    
+    private Flux<DataBuffer> rewriteResponseContent(Flux<DataBuffer> originalContent, 
+                                                   MediaType contentType, 
+                                                   ServiceMapping mapping, 
+                                                   DataBufferFactory bufferFactory) {
+        
+        // Only rewrite HTML, CSS, and JavaScript content
+        if (contentType == null || !shouldRewriteContent(contentType)) {
+            return originalContent;
+        }
+        
+        System.out.println("🔄 Rewriting content for " + mapping.getName() + " (Content-Type: " + contentType + ")");
+        
+        // Collect all data buffers into a single string
+        return originalContent
+            .collectList()
+            .map(dataBuffers -> {
+                // Combine all buffers into a single string
+                StringBuilder content = new StringBuilder();
+                for (DataBuffer buffer : dataBuffers) {
+                    byte[] bytes = new byte[buffer.readableByteCount()];
+                    buffer.read(bytes);
+                    content.append(new String(bytes, StandardCharsets.UTF_8));
+                }
+                
+                // Perform content rewriting
+                String rewrittenContent = rewriteContent(content.toString(), mapping);
+                
+                // Convert back to DataBuffer
+                byte[] rewrittenBytes = rewrittenContent.getBytes(StandardCharsets.UTF_8);
+                return bufferFactory.wrap(rewrittenBytes);
+            })
+            .flux();
+    }
+    
+    private boolean shouldRewriteContent(MediaType contentType) {
+        return contentType.includes(MediaType.TEXT_HTML) ||
+               contentType.toString().contains("text/css") ||
+               contentType.toString().contains("javascript");
+    }
+    
+    private String rewriteContent(String content, ServiceMapping mapping) {
+        String pathPrefix = mapping.getPathPrefix();
+        
+        // Common patterns to rewrite for web applications
+        String rewritten = content;
+        
+        // Rewrite absolute paths in HTML/JS
+        // src="/_app/... -> src="/immich/_app/...
+        rewritten = rewritten.replaceAll("(src|href)=\"(/[^\"]*?)\"", "$1=\"" + pathPrefix + "$2\"");
+        
+        // Rewrite fetch() and similar API calls
+        // fetch("/_app/... -> fetch("/immich/_app/...
+        rewritten = rewritten.replaceAll("(fetch|import)\\s*\\(\\s*['\"](/[^'\"]*?)['\"]", "$1(\"" + pathPrefix + "$2\"");
+        
+        // Rewrite CSS url() references
+        // url(/_app/... -> url(/immich/_app/...
+        rewritten = rewritten.replaceAll("url\\s*\\(\\s*['\"]?(/[^'\"\\)]*?)['\"]?\\s*\\)", "url(" + pathPrefix + "$1)");
+        
+        // Rewrite JavaScript module imports
+        // import ... from "/_app/... -> import ... from "/immich/_app/...
+        rewritten = rewritten.replaceAll("(import\\s+.*?\\s+from\\s+['\"])(/[^'\"]*?)(['\"])", "$1" + pathPrefix + "$2$3");
+        
+        // Rewrite dynamic imports
+        // import("/_app/... -> import("/immich/_app/...
+        rewritten = rewritten.replaceAll("import\\s*\\(\\s*['\"](/[^'\"]*?)['\"]\\s*\\)", "import(\"" + pathPrefix + "$1\")");
+        
+        // Special handling for common API patterns
+        if (pathPrefix.contains("immich")) {
+            // Rewrite Immich API calls
+            rewritten = rewritten.replaceAll("(['\"])/api/", "$1" + pathPrefix + "/api/");
+        }
+        
+        if (pathPrefix.contains("ha")) {
+            // Rewrite Home Assistant patterns
+            rewritten = rewritten.replaceAll("(['\"])/auth/", "$1" + pathPrefix + "/auth/");
+            rewritten = rewritten.replaceAll("(['\"])/hacsfiles/", "$1" + pathPrefix + "/hacsfiles/");
+        }
+        
+        System.out.println("🔄 Content rewriting completed for " + mapping.getName());
+        return rewritten;
     }
 }
