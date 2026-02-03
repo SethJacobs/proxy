@@ -163,15 +163,21 @@ public class ProxyService {
                         }
                     });
                     
-                    // Stream the response body with potential content rewriting
-                    return response.writeWith(
-                        rewriteResponseContent(
-                            clientResponse.bodyToFlux(DataBuffer.class),
-                            clientResponse.headers().contentType().orElse(null),
-                            mapping,
-                            response.bufferFactory()
-                        )
-                    );
+                    // Stream the response body - only rewrite small HTML responses
+                    MediaType contentType = clientResponse.headers().contentType().orElse(null);
+                    if (shouldRewriteContent(contentType) && isSmallResponse(clientResponse)) {
+                        return response.writeWith(
+                            rewriteResponseContent(
+                                clientResponse.bodyToFlux(DataBuffer.class),
+                                contentType,
+                                mapping,
+                                response.bufferFactory()
+                            )
+                        );
+                    } else {
+                        // Stream directly without rewriting for large responses or non-HTML content
+                        return response.writeWith(clientResponse.bodyToFlux(DataBuffer.class));
+                    }
                 })
                 .onErrorResume(error -> {
                     String errorMsg = error.getMessage();
@@ -215,27 +221,22 @@ public class ProxyService {
                                                    ServiceMapping mapping, 
                                                    DataBufferFactory bufferFactory) {
         
-        // Only rewrite HTML, CSS, and JavaScript content
-        if (contentType == null || !shouldRewriteContent(contentType)) {
-            return originalContent;
-        }
+        System.out.println("🔄 Rewriting HTML content for " + mapping.getName());
         
-        System.out.println("🔄 Rewriting content for " + mapping.getName() + " (Content-Type: " + contentType + ")");
-        
-        // Collect all data buffers into a single string
+        // Collect all data buffers into a single string (only for small HTML responses)
         return originalContent
-            .collectList()
-            .map(dataBuffers -> {
-                // Combine all buffers into a single string
-                StringBuilder content = new StringBuilder();
-                for (DataBuffer buffer : dataBuffers) {
-                    byte[] bytes = new byte[buffer.readableByteCount()];
-                    buffer.read(bytes);
-                    content.append(new String(bytes, StandardCharsets.UTF_8));
-                }
+            .reduce(bufferFactory.allocateBuffer(), (accumulated, buffer) -> {
+                accumulated.write(buffer);
+                return accumulated;
+            })
+            .map(buffer -> {
+                // Convert to string
+                byte[] bytes = new byte[buffer.readableByteCount()];
+                buffer.read(bytes);
+                String content = new String(bytes, StandardCharsets.UTF_8);
                 
                 // Perform content rewriting
-                String rewrittenContent = rewriteContent(content.toString(), mapping);
+                String rewrittenContent = rewriteContent(content, mapping);
                 
                 // Convert back to DataBuffer
                 byte[] rewrittenBytes = rewrittenContent.getBytes(StandardCharsets.UTF_8);
@@ -245,9 +246,12 @@ public class ProxyService {
     }
     
     private boolean shouldRewriteContent(MediaType contentType) {
-        return contentType.includes(MediaType.TEXT_HTML) ||
-               contentType.toString().contains("text/css") ||
-               contentType.toString().contains("javascript");
+        return contentType != null && contentType.includes(MediaType.TEXT_HTML);
+    }
+    
+    private boolean isSmallResponse(org.springframework.web.reactive.function.client.ClientResponse clientResponse) {
+        // Only rewrite responses smaller than 1MB to avoid memory issues
+        return clientResponse.headers().contentLength().orElse(0L) < 1024 * 1024;
     }
     
     private String rewriteContent(String content, ServiceMapping mapping) {
